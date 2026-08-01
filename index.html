@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Synthwave Audio Visualizer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0221;
+      overflow: hidden;
+      font-family: 'Courier New', Courier, monospace;
+      color: #ff007f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 1;
+    }
+    .ui {
+      position: relative;
+      z-index: 10;
+      background: rgba(13, 2, 33, 0.85);
+      padding: 20px;
+      border: 2px solid #00f6ff;
+      border-radius: 8px;
+      box-shadow: 0 0 15px #00f6ff;
+      text-align: center;
+    }
+    input[type="file"] { display: none; }
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      background: #ff007f;
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 10px #ff007f;
+      transition: 0.2s;
+    }
+    .btn:hover { background: #00f6ff; box-shadow: 0 0 15px #00f6ff; color: #000; }
+  </style>
+</head>
+<body>
+
+  <div class="ui">
+    <h2>SYSTEM STATUS: ONLINE</h2>
+    <p style="margin: 10px 0; color: #00f6ff;">LOAD AUDIO TRACK TO INITIALIZE VISUALS</p>
+    <label class="btn" for="audioInput">CHOOSE AUDIO FILE</label>
+    <input type="file" id="audioInput" accept="audio/*">
+  </div>
+
+  <canvas id="visualizer"></canvas>
+
+  <script>
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    const audioInput = document.getElementById('audioInput');
+
+    let audioCtx, analyser, source, dataArray, bufferLength;
+    let gridOffset = 0;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    audioInput.addEventListener('change', function() {
+      const files = this.files;
+      if (files.length === 0) return;
+
+      const file = files[0];
+      const audioUrl = URL.createObjectURL(file);
+      const audio = new Audio(audioUrl);
+
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 128; // Control frequency bin granularity
+
+      source = audioCtx.createMediaElementSource(audio);
+      source.connect(analyser);
+      analyser.connect(audioCtx.destination);
+
+      bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+
+      audio.play();
+      document.querySelector('.ui').style.display = 'none'; // Hide UI on play
+      render();
+    });
+
+    function render() {
+      requestAnimationFrame(render);
+
+      if (analyser) {
+        analyser.getByteFrequencyData(dataArray);
+      }
+
+      // Background Clear
+      ctx.fillStyle = '#0d0221';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      // Calculate Bass Energy for Beat Pushing
+      let bassSum = 0;
+      if (dataArray) {
+        for (let i = 0; i < 10; i++) bassSum += dataArray[i];
+      }
+      const bassAvg = bassSum / 10 || 0;
+      const pulse = bassAvg / 255; // 0 to 1 scale
+
+      // Draw Retro Sun
+      const sunRadius = 120 + pulse * 40;
+      const sunGradient = ctx.createLinearGradient(cx, cy - sunRadius, cx, cy + sunRadius);
+      sunGradient.addColorStop(0, '#ff007f');
+      sunGradient.addColorStop(1, '#ffee00');
+
+      ctx.beginPath();
+      ctx.arc(cx, cy - 20, sunRadius, 0, Math.PI * 2);
+      ctx.fillStyle = sunGradient;
+      ctx.shadowBlur = 30 + pulse * 20;
+      ctx.shadowColor = '#ff007f';
+      ctx.fill();
+      ctx.shadowBlur = 0; // Reset shadow
+
+      // Draw Neon Horizon Grid
+      ctx.strokeStyle = '#00f6ff';
+      ctx.lineWidth = 1.5;
+      gridOffset = (gridOffset + 1 + pulse * 4) % 40;
+
+      // Horizontal lines moving down
+      for (let y = cy; y < canvas.height; y += 20) {
+        const perspectiveY = y + gridOffset;
+        ctx.beginPath();
+        ctx.moveTo(0, perspectiveY);
+        ctx.lineTo(canvas.width, perspectiveY);
+        ctx.stroke();
+      }
+
+      // Draw Frequency Spectrum Bars
+      if (dataArray) {
+        const barWidth = (canvas.width / bufferLength) * 1.2;
+        let x = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+          const barHeight = (dataArray[i] / 255) * (canvas.height / 2.5);
+
+          ctx.fillStyle = `hsl(${280 + (i / bufferLength) * 80}, 100%, 50%)`;
+          ctx.fillRect(x, canvas.height - barHeight, barWidth - 2, barHeight);
+
+          x += barWidth;
+        }
+      }
+    }
+
+    render(); // Start loop
+  </script>
+</body>
+</html>
